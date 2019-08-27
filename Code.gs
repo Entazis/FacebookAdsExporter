@@ -1,4 +1,4 @@
-/* Facebook Reporting & Cost Data Upload in Google Analytics 
+/* Facebook Reporting & Cost Data Upload in Google Analytics
  * Description: Uploads Facebook (API v3.2) Cost Data in Google Analytics.
  * @Ritwikga www.Digishuffle.com
  *
@@ -24,69 +24,65 @@
  * Updated: 10-10-2017
  * - Facebook UTM Feature Added
  * - Access to Facebook Ad Level Data Parameters
- * - Facebook Export Limit - Full Quota 
+ * - Facebook Export Limit - Full Quota
  */
 
+///// Google Spreadsheet ///////
+
+var SPREADSHEET_URL = '';
+var SLACK_POST_URL = '';
 
 ///// Facebook Details ///////
 
-var CLIENT_ID = '' ;     // Insert App ID                                        
+var CLIENT_ID = '';     // Insert App ID
 
 var CLIENT_SECRET = '';  //; // Insert App Secret
 
-var FB_AD_ACCOUNT_ID = ''   //Ad Account Id
+var FB_AD_ACCOUNT_ID = '';   //Ad Account Id
 
-var FB_FIELDS = 'clicks,spend,impressions,campaign_name,adset_name,ad_name';
+var FB_FIELDS = 'date_start, date_stop, campaign_name, spend, reach, clicks, actions';
 
-var FB_LEVEL = 'ad'; // ad,adset,campaign,account 
+var FB_LEVEL = 'campaign'; // ad,adset,campaign,account
 
-// More FB_FIELDS at https://developers.facebook.com/docs/marketing-api/insights/fields/v2.3 
+// More FB_FIELDS at https://developers.facebook.com/docs/marketing-api/insights/fields/v2.3
 
-var pos = [2,1]     //Spreadsheet Cell Position
+var pos = [1, 1];     //Spreadsheet Cell Position
 
-var DATE_RANGE='last_month';    //today, yesterday, this_month, last_month, this_quarter, etc 
+var DATE_RANGE = 'last_14d';    //today, yesterday, this_month, last_month, this_quarter, last_30d etc
 
 //More DATE_RANGE at https://developers.facebook.com/docs/marketing-api/insights/parameters/v2.3 (date_preset paramteter)
 
-//// To use below date range, make sure DATE_RANGE='' ///// 
-var start_date='2017-01-01';                // custom date range
-var end_date='2017-06-30';
-
-
+//// To use below date range, make sure DATE_RANGE='' /////
+var start_date = '';                // custom date range
+var end_date = '';
 
 //// Facebook Ad URL UTMs values /////
-var SOURCE = "facebook"                   // source, if not specified in Facebook Tracking URL Params utm_source
-var MEDIUM = "cpc"                        // medium, if not specified in Facebook Tracking URL Params utm_medium
+var SOURCE = "facebook";                   // source, if not specified in Facebook Tracking URL Params utm_source
+var MEDIUM = "cpc";                        // medium, if not specified in Facebook Tracking URL Params utm_medium
 
 var limit = 100;      //Facebook Graph API Limit per request
 
-
-
 //// GA Upload Format ////
-var isGaUpload = true;
-
+var isGaUpload = false;
 
 //// Google Analytics Data (Optional: Only for GA upload feature) /////////
 var ACCOUNT_ID = "";                                    //Account ID
 var PROPERTY_ID = "";                              //Property ID
 var DATASET_ID = "";                      //Data set upload ID
 
-
-
 //// CurrenyMultiplier ////////
 
 var currenyMultiplier = 1;               //Will Multipy 'Spend' Field. Use it for currency conversions.
 
-
-//// Emailers ////////////  
-var isEmail = false                     // Will Send Email To Provide Status Of Upload (During Automation)
-var subject = ''                        // Enter Subject Line For Email Else It Fallback To "Facebook Data Upload To GA(ACCOUNTID)"
+//// Emailers ////////////
+var isEmail = false;                     // Will Send Email To Provide Status Of Upload (During Automation)
+var subject = '';                        // Enter Subject Line For Email Else It Fallback To "Facebook Data Upload To GA(ACCOUNTID)"
 
 ////// Add UI FIELDS ////////////////////
-var adAccountUIFields = ['account_currency','account_id','account_name','ad_name','adset_name','campaign_name','clicks','impressions','cpc','cpm','date_start','date_stop'
-    ,'reach','spend','unique_clicks']   /// The Columns To Be Populated in the Fields Box in the UI.
+var adAccountUIFields = ['account_currency', 'account_id', 'account_name', 'ad_name', 'adset_name', 'campaign_name', 'clicks', 'impressions', 'cpc', 'cpm', 'date_start', 'date_stop'
+    , 'reach', 'spend', 'unique_clicks'];   /// The Columns To Be Populated in the Fields Box in the UI.
 
-var adAccountLevels = ['ad','adset','campaign','account']   /// The Columns To Be Populated in the Fields Box in the UI.
+var adAccountLevels = ['ad', 'adset', 'campaign', 'account'];   /// The Columns To Be Populated in the Fields Box in the UI.
 
 /**
  *
@@ -96,38 +92,151 @@ var adAccountLevels = ['ad','adset','campaign','account']   /// The Columns To B
 
 
 function showBar() {
-    var html=HtmlService.createTemplateFromFile('digiSideBar').evaluate().setTitle("Facebook Reporting Tool").setWidth(300)
-    SpreadsheetApp.getUi().showSidebar(html)
+    var html = HtmlService.createTemplateFromFile('digiSideBar').evaluate().setTitle("Facebook Reporting Tool").setWidth(300);
+    SpreadsheetApp.getUi().showSidebar(html);
 }
 
-
-function clear(){
-    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet()
-    sheet.clear()
+function clear() {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+    sheet.clear();
 }
 
-function facebookData()
-{ makeRequest(FB_AD_ACCOUNT_ID,FB_LEVEL, FB_FIELDS, DATE_RANGE, start_date, end_date, SOURCE, MEDIUM, pos, limit,isGaUpload) }
+function facebookData() { makeRequest(FB_AD_ACCOUNT_ID, FB_LEVEL, FB_FIELDS, DATE_RANGE, start_date, end_date, SOURCE, MEDIUM, pos, limit, isGaUpload, 'FB data exporter'); }
 
-function uploadDataToGa()
-{  uploadData(ACCOUNT_ID, PROPERTY_ID, DATASET_ID) }
+function facebookDataMonthly() {
+    console.info('facebookDataMonthly has started!');
+    var spreadsheet = SpreadsheetApp.openByUrl(SPREADSHEET_URL);
+    var lastDate = new Date(spreadsheet.getRangeByName('lastFacebookMonthlyDate').getValue());
+    var startDate = new Date(new Date().setTime(lastDate.getTime() + 1 * 24 * 60 * 60 * 1000));
+    startDate.setMonth(startDate.getMonth() - 1);
+    var start_date = Utilities.formatDate(startDate, "GMT+2", "yyyy-MM-dd");
+    var end_date = Utilities.formatDate(new Date(new Date().getTime() - 24 * 3600 * 1000), "GMT+2", "yyyy-MM-dd");
+
+    console.log('deleting rows..');
+    deleteRowsFrom(start_date, 'FB-monthly');
+
+    var dayCountPerPeriod = 1;
+    var periodStartDate = new Date(start_date);
+    var periodEndDate = new Date(periodStartDate.getFullYear(), periodStartDate.getMonth() + 1, 0);
+    var period_start_date = '';
+    var period_end_date = '';
+
+    console.log('getting and writing data..');
+    while (periodEndDate.getTime() <= new Date(end_date).getTime()) {
+        period_start_date = Utilities.formatDate(new Date(periodStartDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        period_end_date = Utilities.formatDate(new Date(periodEndDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        makeRequest(FB_AD_ACCOUNT_ID, FB_LEVEL, FB_FIELDS, '', period_start_date, period_end_date, SOURCE, MEDIUM, pos, limit, isGaUpload, 'FB-monthly', period_end_date == end_date);
+
+        periodStartDate.setDate(periodEndDate.getDate() + dayCountPerPeriod);
+        periodEndDate = new Date(periodStartDate.getFullYear(), periodStartDate.getMonth() + 1, 0);
+    }
+    console.info('facebookDataMonthly has finished!');
+}
+
+function facebookDataWeekly() {
+    console.info('facebookDataWeekly has started!');
+    var spreadsheet = SpreadsheetApp.openByUrl(SPREADSHEET_URL);
+    var lastDate = new Date(spreadsheet.getRangeByName('lastFacebookWeeklyDate').getValue());
+    var start_date = Utilities.formatDate(new Date(new Date().setTime(lastDate.getTime() + 1 * 24 * 60 * 60 * 1000 - 28 * 24 * 60 * 60 * 1000)), "GMT+2", "yyyy-MM-dd");
+    var end_date = Utilities.formatDate(new Date(new Date().getTime() - 24 * 3600 * 1000), "GMT+2", "yyyy-MM-dd");
+
+    console.log('deleting rows..');
+    deleteRowsFrom(start_date, 'FB-weekly');
+
+    var dayCountPerPeriod = 7;
+    var periodStartDate = new Date(start_date);
+    var periodEndDate = new Date(periodStartDate.getTime() + 24 * 3600 * 1000 * (dayCountPerPeriod - 1));
+    var period_start_date = '';
+    var period_end_date = '';
+
+    console.log('getting and writing data..');
+    while (periodEndDate.getTime() <= new Date(end_date).getTime()) {
+        period_start_date = Utilities.formatDate(new Date(periodStartDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        period_end_date = Utilities.formatDate(new Date(periodEndDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        makeRequest(FB_AD_ACCOUNT_ID, FB_LEVEL, FB_FIELDS, '', period_start_date, period_end_date, SOURCE, MEDIUM, pos, limit, isGaUpload, 'FB-weekly', period_end_date == end_date);
+
+        periodStartDate.setDate(periodStartDate.getDate() + dayCountPerPeriod);
+        periodEndDate.setDate(periodEndDate.getDate() + dayCountPerPeriod);
+    }
+    console.info('facebookDataWeekly has finished!');
+}
+
+function facebookDataDaily() {
+    console.info('facebookDataDaily has started!');
+    var spreadsheet = SpreadsheetApp.openByUrl(SPREADSHEET_URL);
+    var lastDate = new Date(spreadsheet.getRangeByName('lastFacebookDailyDate').getValue());
+    var start_date = Utilities.formatDate(new Date(new Date().setTime(lastDate.getTime() + 1 * 24 * 60 * 60 * 1000 - 14 * 24 * 60 * 60 * 1000)), "GMT+2", "yyyy-MM-dd");
+    var end_date = Utilities.formatDate(new Date(new Date().getTime() - 24 * 3600 * 1000), "GMT+2", "yyyy-MM-dd");
+
+    console.log('deleting rows..');
+    deleteRowsFrom(start_date, 'FB-daily');
+
+    var dayCountPerPeriod = 1;
+    var periodStartDate = new Date(start_date);
+    var periodEndDate = new Date(periodStartDate.getTime() + 24 * 3600 * 1000 * (dayCountPerPeriod - 1));
+    var period_start_date = '';
+    var period_end_date = '';
+
+    console.log('getting and writing data..');
+    while (periodEndDate.getTime() <= new Date(end_date).getTime()) {
+        period_start_date = Utilities.formatDate(new Date(periodStartDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        period_end_date = Utilities.formatDate(new Date(periodEndDate.getTime()), "GMT+2", "yyyy-MM-dd");
+        makeRequest(FB_AD_ACCOUNT_ID, FB_LEVEL, FB_FIELDS, '', period_start_date, period_end_date, SOURCE, MEDIUM, pos, limit, isGaUpload, 'FB-daily', period_end_date == end_date);
+
+        periodStartDate.setDate(periodStartDate.getDate() + dayCountPerPeriod);
+        periodEndDate.setDate(periodEndDate.getDate() + dayCountPerPeriod);
+    }
+    console.info('facebookDataDaily has finished!');
+}
+
+function deleteRowsFrom(startDate, sheetName) {
+    var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+
+    var startRowIndex = findInColumn(sheet, 'A', startDate);
+    var endRowIndex = sheet.getLastRow();//Number of last row with content
+    //blank rows after last row with content will not be deleted
+
+    if (startRowIndex > -1) {
+        sheet.deleteRows(startRowIndex, endRowIndex - startRowIndex + 1);
+    }
+}
+
+function findInColumn(spreadsheet, column, data) {
+    var columnRange = spreadsheet.getRange(column + ":" + column);  // like A:A
+    var values = columnRange.getValues();
+    var row = 0;
+
+    for (i = 1; i < values.length; i++) {
+        values[i] = Utilities.formatDate(new Date(values[i][0]), "GMT+2", 'yyyy-MM-dd');
+    }
+
+    while (values[row] && values[row] !== data) {
+        row++;
+    }
+
+    if (values[row] === data) {
+        return row + 1;
+    } else {
+        return -1;
+    }
+}
+
+function uploadDataToGa() { uploadData(ACCOUNT_ID, PROPERTY_ID, DATASET_ID); }
 
 function onOpen() {
-    SpreadsheetApp.getUi().createMenu('Cost Data').addSubMenu(SpreadsheetApp.getUi()
-        .createMenu('Facebook').addItem("Open Sidebar", 'showBar').addSeparator().addItem("Authorize", 'fbAuth').addItem("Token Reset", 'reset').addItem("Facebook Data Export", 'facebookData').addItem("Upload Data To GA", 'uploadDataToGa')).addToUi();
+    //SpreadsheetApp.getUi().createMenu('Cost Data').addSubMenu(SpreadsheetApp.getUi()
+    //    .createMenu('Facebook').addItem("Open Sidebar", 'showBar').addSeparator().addItem("Authorize", 'fbAuth').addItem("Token Reset", 'reset').addItem("Facebook Data Export", 'facebookData').addItem("Upload Data To GA", 'uploadDataToGa')).addToUi();
 
 }
 
-function fbAuth(){
-    var UI=HtmlService.createTemplate("<b><a href='<?=getService().getAuthorizationUrl()?>' target='_blank'>Click To Authorize</a></b><br /><? if(getService().hasAccess())"+
-        "{ ?> <?!= <p><span style='color:green'>Authorized Successfully</span></p> } else {?> <?!= <p><span style='color:red'>Not Authorized</span></p> }").evaluate()
-    SpreadsheetApp.getUi().showModalDialog(UI, "Facebook Authorization")
+function fbAuth() {
+    var UI = HtmlService.createTemplate("<b><a href='<?=getService().getAuthorizationUrl()?>' target='_blank'>Click To Authorize</a></b><br /><? if(getService().hasAccess())" +
+        "{ ?> <?!= <p><span style='color:green'>Authorized Successfully</span></p> } else {?> <?!= <p><span style='color:red'>Not Authorized</span></p> }").evaluate();
+    SpreadsheetApp.getUi().showModalDialog(UI, "Facebook Authorization");
 
 }
 
-
-function jsonToQuery(param)
-{
+function jsonToQuery(param) {
     var str = "";
     for (var key in param) {
         if (str != "") {
@@ -135,225 +244,355 @@ function jsonToQuery(param)
         }
         str += key + "=" + param[key];
     }
-    return str
+    return str;
 }
 
-function makeRequest(FB_AD_ACCOUNT_ID,FB_LEVEL, FB_FIELDS, DATE_RANGE, start_date, end_date, SOURCE, MEDIUM, pos, limit,isGaUpload) {
+function makeRequest(FB_AD_ACCOUNT_ID, FB_LEVEL, FB_FIELDS, DATE_RANGE, start_date, end_date, SOURCE, MEDIUM, pos, limit, isGaUpload, sheetName, isLast) {
 //
     var fbRequest = getService();
-    var requestEndpoint = "https://graph.facebook.com/v3.2/act_"+FB_AD_ACCOUNT_ID+"/insights?"
-    var param = {'limit':limit,'level': FB_LEVEL}
+    var requestEndpoint = "https://graph.facebook.com/v3.2/act_" + FB_AD_ACCOUNT_ID + "/insights?";
+    var param = {'limit': limit, 'level': FB_LEVEL};
 
-    if(isGaUpload) {
-        param['fields'] = 'ad_id,'+FB_FIELDS
-        param['time_increment'] = '1'
+    if (isGaUpload) {
+        param['fields'] = 'ad_id,' + FB_FIELDS;
+        param['time_increment'] = '1';
     } else {
-        param['fields'] = FB_FIELDS
+        param['fields'] = FB_FIELDS;
     }
 
-    if(DATE_RANGE!="")
-    {   param['date_preset'] = DATE_RANGE ;}
-    else if(start_date!=""&&end_date!="")
-    { param['time_range[since]']=start_date;param['time_range[until]']=end_date; dateRangeUsed=false}
-    else {  SpreadsheetApp.getUi().alert("Enter Correct Date Range!!")}
+    if (DATE_RANGE != "") {
+        param['date_preset'] = DATE_RANGE;
+    } else if (start_date != "" && end_date != "") {
+        param['time_range[since]'] = start_date;
+        param['time_range[until]'] = end_date;
+        dateRangeUsed = false;
+    } else {
+        console.error('Enter Correct Date Range!!');
+    }
 
     var response = UrlFetchApp.fetch(requestEndpoint + jsonToQuery(param),
         {
             headers: {
                 'Authorization': 'Bearer ' + fbRequest.getAccessToken()
             },
-            muteHttpExceptions : true
-        })
+            muteHttpExceptions: true
+        });
 
+    var parseData = JSON.parse(response);
 
-    var parseData = JSON.parse(response)
-
-    if(parseData.hasOwnProperty('error'))
-    {
-        if(parseData.error.hasOwnProperty('error_user_title'))
-        {SpreadsheetApp.getUi().alert(parseData.error.error_user_title)}
-        else{SpreadsheetApp.getUi().alert(parseData.error.message)}
-        return
+    if (parseData.hasOwnProperty('error')) {
+        if (parseData.error.hasOwnProperty('error_user_title')) {
+            console.error(parseData.error.error_user_title);
+        } else {
+            console.error(parseData.error.message);
+        }
+        return;
     }
 
 //
-    if(isGaUpload){
-        var utms_endpoint = "https://graph.facebook.com/v3.2/act_"+FB_AD_ACCOUNT_ID+"/ads?fields=adcreatives%7Burl_tags%7D&limit="+5000
+    if (isGaUpload) {
+        var utms_endpoint = "https://graph.facebook.com/v3.2/act_" + FB_AD_ACCOUNT_ID + "/ads?fields=adcreatives%7Burl_tags%7D&limit=" + 5000;
         var utms_ads = UrlFetchApp.fetch(utms_endpoint,
             {
                 headers: {
                     'Authorization': 'Bearer ' + fbRequest.getAccessToken()
                 },
-                muteHttpExceptions : true
-            })
+                muteHttpExceptions: true
+            });
 
-        var parsed_utms = JSON.parse(utms_ads)
-        if(parsed_utms.hasOwnProperty('error'))
-        {
-            if(parsed_utms.error.hasOwnProperty('error_user_title'))
-            {SpreadsheetApp.getUi().alert(parsed_utms.error.error_user_title)}
-            else{SpreadsheetApp.getUi().alert(parsed_utms.error.message)}
-            return
+        var parsed_utms = JSON.parse(utms_ads);
+        if (parsed_utms.hasOwnProperty('error')) {
+            if (parsed_utms.error.hasOwnProperty('error_user_title')) {
+                console.error(parsed_utms.error.error_user_title);
+            } else {
+                console.error(parsed_utms.error.message);
+            }
+            return;
         }
 
-        var parsed_utms_data = nextTokenData(parsed_utms)
+        var parsed_utms_data = nextTokenData(parsed_utms);
     }
     //
 
-    if(parseData.data.length>0)
-    {
+    if (parseData.data.length > 0) {
 
-        var parseData = nextTokenData(parseData)
-        var sheet= SpreadsheetApp.getActiveSpreadsheet().getSheets()[0];
+        var parseData = nextTokenData(parseData);
+        var sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
 
-        if(typeof(pos) == 'string')
-        {pos = pos.split(',')}
+        if (typeof (pos) == 'string') {pos = pos.split(',');}
 
-        if(sheet.getLastRow() > 0 && sheet.getLastColumn() > 0)
-        {sheet.getRange(pos[0],pos[1],sheet.getLastRow(),sheet.getLastColumn()).clear();}
-        var finalParsedOutput = []
+        var finalParsedOutput = [];
 
+        if (isGaUpload) {
+            finalParsedOutput = parser(parseData, parsed_utms_data, SOURCE, MEDIUM);
+        } else if (sheetName != 'FB data exporter') {
+            finalParsedOutput = parserNonGAWithoutHeader(parseData);
+        } else {
+            finalParsedOutput = parserNonGA(parseData);
+        }
 
-        if(isGaUpload){ finalParsedOutput=parser(parseData,parsed_utms_data,SOURCE,MEDIUM)}
-        else{ finalParsedOutput = parserNonGA(parseData) }
+        sheet.insertRowsAfter(sheet.getLastRow(), finalParsedOutput.length);
+        pos[0] = sheet.getLastRow() + 1;
 
-        sheet.getRange(pos[0], pos[1], finalParsedOutput.length, finalParsedOutput[0].length).setValues(finalParsedOutput)
+        if (finalParsedOutput.length > 0) {
+            sheet.getRange(pos[0], pos[1], finalParsedOutput.length, finalParsedOutput[0].length).setValues(finalParsedOutput);
+            if (sheetName == 'FB-weekly' && isLast) {
+                sendToSlack(finalParsedOutput);
+            }
+        }
 
+        try {
+            console.info("REPORTS EXPORTED FOR DATE RANGE: "+start_date+" TO "+end_date+"\n ACCOUNT_ID: "+FB_AD_ACCOUNT_ID+"\n ROWS: "+finalParsedOutput.length);
+        } catch (e) {
+            console.error(e);
+            return;
+        }
 
-        try{
-            SpreadsheetApp.getUi().alert("REPORTS EXPORTED FOR DATE RANGE: "+start_date+" TO "+end_date+"\n ACCOUNT_ID: "+FB_AD_ACCOUNT_ID+"\n ROWS: "+finalParsedOutput.length);
-        } catch (e) {return }
+    } else {
+        console.error('No Facebook Data For The Applied Date Range');
+        return;
+    }
+}
 
-    } else {SpreadsheetApp.getUi().alert('No Facebook Data For The Applied Date Range'); return;}
-};
-
-
-function nextTokenData(parseData)
-{
+function nextTokenData(parseData) {
     var fbRequest = getService();
-    if(parseData.paging.next != undefined)
-    {
+    if (parseData.paging.next != undefined) {
         var parsedata_pg = parseData;
-        while (true)
-        {
+        while (true) {
             var response = UrlFetchApp.fetch(parsedata_pg.paging.next,
                 {
                     headers: {
                         'Authorization': 'Bearer ' + fbRequest.getAccessToken()
                     },
-                    muteHttpExceptions : true
-                })
+                    muteHttpExceptions: true
+                });
 
+            parsedata_pg = JSON.parse(response);
+            parseData.data = parseData.data.concat(parsedata_pg.data);
 
-            parsedata_pg = JSON.parse(response)
-            parseData.data = parseData.data.concat(parsedata_pg.data)
-
-            if(parsedata_pg.paging.next == undefined)
-            { break;}
+            if (parsedata_pg.paging.next == undefined) { break;}
         }
     }
-    return parseData
+    return parseData;
 
 }
 
-function AdIds(id, parsed_utms_data)
-{
+function sendToSlack(rows) {
+    var last_date = new Date(rows[rows.length-1][0]);
+    var last_date_end = new Date(rows[rows.length-1][1]);
+    var rows_filtered = rows.filter(function(row) {
+        return new Date(row[0]).getDate() === last_date.getDate() && new Date(row[0]).getMonth() === last_date.getMonth() && new Date(row[0]).getFullYear() === last_date.getFullYear() &&
+            new Date(row[1]).getDate() === last_date_end.getDate() && new Date(row[1]).getMonth() === last_date_end.getMonth() && new Date(row[1]).getFullYear() === last_date_end.getFullYear();
+    });
 
-    var data = parsed_utms_data
+    var campaigns = [];
 
-    for (i in data.data)
-    {
+    rows_filtered.forEach(function(row){
+        campaigns.push({
+            title: row[2],
+            value: '[cost: ' + parseInt(row[3]).toFixed(0) + '] [trial: ' + parseInt(row[6]).toFixed(0) + '] [paid: ' + parseInt(row[7]).toFixed(0) +  ']',
+            short: false
+        });
+    });
 
-        if (data.data[i].id == id)
-        {
-            if (data.data[i].adcreatives.data[0].url_tags != undefined)
-            {
-                var tags = data.data[i].adcreatives.data[0].url_tags
-                var ids_obj = {}
+    var month = '' + (last_date.getMonth() + 1);
+    var day = '' + last_date.getDate();
+    var year = last_date.getFullYear();
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+    var dateString = [year, month, day].join('.');
 
-                ids_obj['id']=data.data[i].id
+    var month_end = '' + (last_date_end.getMonth() + 1);
+    var day_end = '' + last_date_end.getDate();
+    var year_end = last_date_end.getFullYear();
+    if (month_end.length < 2) month_end = '0' + month_end;
+    if (day_end.length < 2) day_end = '0' + day_end;
+    var dateStringEnd = [year_end, month_end, day_end].join('.');
 
-                if (/utm_source=([^&]+)/i.exec(tags) != null)
-                {ids_obj['source'] = /utm_source=([^&]+)/i.exec(tags)[1]}
+    var payload = {
+        'channel' : '#ad-stats',
+        'username' : 'Facebook Ads Stats Bot',
+        'icon_url' : 'https://miro.medium.com/max/774/1*8mH1gQPEJ-te-zCjoLZyGA.png',
+        'attachments': [{
+            "fallback": "Required plain-text summary of the attachment.",
+            "color": "#3b5998",
+            "pretext": "Here’s the weekly stats for Facebook Ads campaigns: " + dateString + "-" + dateStringEnd,
+            "author_name": "Google Ads account summary report",
+            "author_link": "https://docs.google.com/spreadsheets/d/1CuWeC4tu2KeOiN4-ikH7SNLI_kEicLX69zXnEdJKrts/edit#gid=911539724",
+            "fields": campaigns,
+            "footer": "Made with ❤️ by a global team."
+        }]
+    };
 
-                if (/utm_medium=([^&]+)/i.exec(tags) != null)
-                {ids_obj['medium'] = /utm_medium=([^&]+)/i.exec(tags)[1]}
+    var options = {
+        'method' : 'post',
+        'contentType' : 'application/json',
+        'payload' : JSON.stringify(payload)
+    };
 
-                if (/utm_campaign=([^&]+)/i.exec(tags) != null)
-                {ids_obj['campaign'] = /utm_campaign=([^&]+)/i.exec(tags)[1]}
+    UrlFetchApp.fetch(SLACK_POST_URL, options);
+}
 
-                if (/utm_content=([^&]+)/i.exec(tags) != null)
-                {ids_obj['content'] = /utm_content=([^&]+)/i.exec(tags)[1]}
+function AdIds(id, parsed_utms_data) {
 
-            } else { return false }
-            return ids_obj
-        } } }
+    var data = parsed_utms_data;
 
-function parserNonGA(parseData){
+    for (i in data.data) {
 
-    var data=parseData.data;
-    var rw=[];
-    rw[0]=[]
-    for (key in data[0]){
-        rw[0].push(key.replace(/\,|\'|\"/g,''))
+        if (data.data[i].id == id) {
+            if (data.data[i].adcreatives.data[0].url_tags != undefined) {
+                var tags = data.data[i].adcreatives.data[0].url_tags;
+                var ids_obj = {};
+
+                ids_obj['id'] = data.data[i].id;
+
+                if (/utm_source=([^&]+)/i.exec(tags) != null) {ids_obj['source'] = /utm_source=([^&]+)/i.exec(tags)[1];}
+
+                if (/utm_medium=([^&]+)/i.exec(tags) != null) {ids_obj['medium'] = /utm_medium=([^&]+)/i.exec(tags)[1];}
+
+                if (/utm_campaign=([^&]+)/i.exec(tags) != null) {ids_obj['campaign'] = /utm_campaign=([^&]+)/i.exec(tags)[1];}
+
+                if (/utm_content=([^&]+)/i.exec(tags) != null) {ids_obj['content'] = /utm_content=([^&]+)/i.exec(tags)[1];}
+
+            } else { return false; }
+            return ids_obj;
+        }
     }
-    for (var i = 0; i < data.length; i++)
-    {
-        rw[i+1]=[]
-        for (key in data[i])
-        {
-            rw[i+1].push(data[i][key].replace(/\,|\'|\"/g,''))
+}
+
+function parserNonGA(parseData) {
+
+    var data = parseData.data;
+    var rw = [];
+    rw[0] = [];
+    for (key in data[0]) {
+        rw[0].push(key.replace(/\,|\'|\"/g, ''));
+    }
+    for (var i = 0; i < data.length; i++) {
+        rw[i + 1] = [];
+        for (key in data[i]) {
+            rw[i + 1].push(data[i][key].replace(/\,|\'|\"/g, ''));
         }
 
     }
-    return rw
+    return rw;
 }
 
-function parser(parseData,parsed_utms_data,SOURCE,MEDIUM)
-{
+function parserNonGAWithoutHeader(parseData) {
 
-    var Data=parseData;
-    var rw=[];
-    for (var i = 0; i < Data.data.length; i++)
-    {
-        rw[i]=[]
-        var p = {}
-        for (key in Data.data[i])
-        {
-            if (key == 'ad_id') { p = AdIds(Data.data[i][key],parsed_utms_data); continue;}
+    var data = parseData.data;
+    var rw = [];
+    var rw_filtered = [];
+    var locale = null;
 
-            if (p==undefined) { Logger.log("Ad ID Error"); break; }
-            if (key == 'campaign_name')
-            { if (p.campaign != undefined)
-            {rw[i].push(p.campaign);continue;}
-            else { rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g,'')); continue; }
+    for (var i = 0; i < data.length; i++) {
+        rw[i] = [];
+        var actionsFound = false;
+        for (key in data[i]) {
+            if (key == 'actions') {
+                actionsFound = true;
+                var conversionFound = false;
+                for (var j = 0; j < data[i][key].length; j++) {
+                    if (data[i][key][j].action_type == 'offsite_conversion.custom.137585540085949') {
+                        rw[i].push(data[i][key][j].value);
+                        conversionFound = true;
+                    }
+                }
+                if (!conversionFound) {
+                    rw[i].push('0');
+                }
+
+                var conversionFound = false;
+                for (var j = 0; j < data[i][key].length; j++) {
+                    if (data[i][key][j].action_type == 'offsite_conversion.custom.410250096151488') {
+                        rw[i].push(data[i][key][j].value);
+                        conversionFound = true;
+                    }
+                }
+                if (!conversionFound) {
+                    rw[i].push('0');
+                }
+            } else {
+                rw[i].push(data[i][key].replace(/\,|\'|\"/g, ''));
             }
-            if (key == 'ad_name')
-            {
-                if (p.content != undefined)
-                {
-                    rw[i].push(p.content); continue;
-                } else { rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g,'')); continue; }
-            }
 
-            if(key == 'spend') { rw[i].push(Data.data[i][key]*currenyMultiplier); continue; }
-
-            if(key=='date_stop') {continue;}
-            if(key=='date_start') {rw[i].push(Data.data[i][key].toString().split('-').join(''));continue;}
-
-            rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g,''))
         }
-        if (p.source !=undefined)
-        { rw[i].push( p.source )  }
-        else{ rw[i].push(SOURCE)}
 
-        if (p.medium !=undefined)
-        {rw[i].push( p.medium ) }
-        else{rw[i].push(MEDIUM)}
+        if (!actionsFound) {
+            rw[i].push('0');
+            rw[i].push('0');
+        }
+
+        locale = rw[i][2].match(/[a-z]{2}-[A-Z]{2}/);
+        if (locale) {
+            rw[i].splice(2, 0, locale.join());
+        } else {
+            rw[i].splice(2, 0, 'hu-HU');
+        }
+
     }
-    return rw
+    rw_filtered = rw.filter(function(row) {
+        return row[3].toLowerCase().indexOf('codeberry') > -1 && row[3].indexOf('Post') == -1;
+    });
+
+    return rw_filtered;
 }
 
+function parser(parseData, parsed_utms_data, SOURCE, MEDIUM) {
+
+    var Data = parseData;
+    var rw = [];
+    for (var i = 0; i < Data.data.length; i++) {
+        rw[i] = [];
+        var p = {};
+        for (key in Data.data[i]) {
+            if (key == 'ad_id') {
+                p = AdIds(Data.data[i][key], parsed_utms_data);
+                continue;
+            }
+
+            if (p == undefined) {
+                Logger.log("Ad ID Error");
+                break;
+            }
+            if (key == 'campaign_name') {
+                if (p.campaign != undefined) {
+                    rw[i].push(p.campaign);
+                    continue;
+                } else {
+                    rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g, ''));
+                    continue;
+                }
+            }
+            if (key == 'ad_name') {
+                if (p.content != undefined) {
+                    rw[i].push(p.content);
+                    continue;
+                } else {
+                    rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g, ''));
+                    continue;
+                }
+            }
+
+            if (key == 'spend') {
+                rw[i].push(Data.data[i][key] * currenyMultiplier);
+                continue;
+            }
+
+            if (key == 'date_stop') {continue;}
+            if (key == 'date_start') {
+                rw[i].push(Data.data[i][key].toString().split('-').join(''));
+                continue;
+            }
+
+            rw[i].push(Data.data[i][key].replace(/\,|\'|\"/g, ''));
+        }
+        if (p.source != undefined) { rw[i].push(p.source); } else { rw[i].push(SOURCE);}
+
+        if (p.medium != undefined) {rw[i].push(p.medium); } else {rw[i].push(MEDIUM);}
+    }
+    return rw;
+}
 
 /**
  *  oAuth Script : https://github.com/googlesamples/apps-script-oauth2
@@ -385,176 +624,171 @@ function getService() {
         .setPropertyStore(PropertiesService.getUserProperties());
 }
 
-
 function authCallback(request) {
     var isAuthorized = getService().handleCallback(request);
 
     if (isAuthorized) {
-        successUI(true)
-        showBar()
+        successUI(true);
+        showBar();
         return HtmlService.createHtmlOutput('Success! You can close this tab.<script>window.top.close()</script>');
     } else {
-        successUI(false)
-        showBar()
+        successUI(false);
+        showBar();
         return HtmlService.createHtmlOutput('Denied. You can close this tab.<script>window.top.close()</script>');
     }
 }
 
-
 function reset() {
     var service = getService();
     service.reset();
-    showBar()
-    SpreadsheetApp.getUi().alert("Token Reset Success!!")
+    showBar();
+    SpreadsheetApp.getUi().alert("Token Reset Success!!");
 }
 
-function successUI(isAuth){
+function successUI(isAuth) {
 
-    if(isAuth){
-        var UI=HtmlService.createTemplate("<b><span style='color:green'>Authorization Successful</span></b>").evaluate()
-        SpreadsheetApp.getUi().showModalDialog(UI, "Authorization Status") } else
-    {var UI=HtmlService.createTemplate("<b><span style='color:red'>Authorization Fail</span></b>").evaluate()
-        SpreadsheetApp.getUi().showModalDialog(UI, "Authorization Status")}
+    if (isAuth) {
+        var UI = HtmlService.createTemplate("<b><span style='color:green'>Authorization Successful</span></b>").evaluate();
+        SpreadsheetApp.getUi().showModalDialog(UI, "Authorization Status");
+    } else {
+        var UI = HtmlService.createTemplate("<b><span style='color:red'>Authorization Fail</span></b>").evaluate();
+        SpreadsheetApp.getUi().showModalDialog(UI, "Authorization Status");
+    }
 }
 
+function preDefinedVariables() {
 
-function preDefinedVariables(){
-
-    return {'adAccountLevels':adAccountLevels,'adAccountUIFields':adAccountUIFields,'source':SOURCE,'medium':MEDIUM,'pos':pos,'limit':limit}
+    return {'adAccountLevels': adAccountLevels, 'adAccountUIFields': adAccountUIFields, 'source': SOURCE, 'medium': MEDIUM, 'pos': pos, 'limit': limit};
 }
-
 
 //function managedPages(){
 //
-// var fbRequest = getService(); 
-//  var endpoint = "https://graph.facebook.com/v3.1/me/accounts" 
-// 
-//  var adAccountInfo = UrlFetchApp.fetch(endpoint, 
+// var fbRequest = getService();
+//  var endpoint = "https://graph.facebook.com/v3.1/me/accounts"
+//
+//  var adAccountInfo = UrlFetchApp.fetch(endpoint,
 //  {
 //    headers: {
 //      'Authorization': 'Bearer ' + fbRequest.getAccessToken()
 //  },
 //    muteHttpExceptions : true
-//  }) 
-//  
+//  })
+//
 //  var parsedadAccountInfo = JSON.parse(adAccountInfo)
 // if(parsedadAccountInfo.data.length > 0){
 // var managedPages = []
-// 
+//
 //   for(var i=0;i<parsedadAccountInfo.data.length;i++){
 //   managedPages.push({'page':parsedadAccountInfo.data[i].name,'id':parsedadAccountInfo.data[i].id})
 //   }
-//   } 
+//   }
 //  else {return false}
-// Logger.log(managedPages) 
-// return { 'managedPages':managedPages } 
+// Logger.log(managedPages)
+// return { 'managedPages':managedPages }
 //}
 
-function adAccounts(){
+function adAccounts() {
 
     var fbRequest = getService();
-    var addaccounts_endpoint = "https://graph.facebook.com/v3.2/me?fields=adaccounts.limit(100)%7Bname,account_id%7D"
+    var addaccounts_endpoint = "https://graph.facebook.com/v3.2/me?fields=adaccounts.limit(100)%7Bname,account_id%7D";
 
     var adAccountInfo = UrlFetchApp.fetch(addaccounts_endpoint,
         {
             headers: {
                 'Authorization': 'Bearer ' + fbRequest.getAccessToken()
             },
-            muteHttpExceptions : true
-        })
+            muteHttpExceptions: true
+        });
 
-    var parsedadAccountInfo = JSON.parse(adAccountInfo)
-    if(parsedadAccountInfo.hasOwnProperty('error') || parsedadAccountInfo.adaccounts == undefined)
-    {return false}
-    else {
-        var adAccountFB = nextTokenData(parsedadAccountInfo.adaccounts,100)
+    var parsedadAccountInfo = JSON.parse(adAccountInfo);
+    if (parsedadAccountInfo.hasOwnProperty('error') || parsedadAccountInfo.adaccounts == undefined) {return false;} else {
+        var adAccountFB = nextTokenData(parsedadAccountInfo.adaccounts, 100);
         var parsed_adurls = parsedadAccountInfo;
-        parsed_adurls['adaccounts'] = adAccountFB
+        parsed_adurls['adaccounts'] = adAccountFB;
 
     }
-    Logger.log(parsed_adurls.adaccounts.data)
-    return { 'facebookAccountData':parsed_adurls.adaccounts.data }
-
+    Logger.log(parsed_adurls.adaccounts.data);
+    return {'facebookAccountData': parsed_adurls.adaccounts.data};
 
 }
 
-
 ////
 //
-//Cost Data Upload Script - http://www.ryanpraski.com/google-analytics-cost-data-import-google-sheets-automated/ 
+//Cost Data Upload Script - http://www.ryanpraski.com/google-analytics-cost-data-import-google-sheets-automated/
 //
 ////
-
 
 function uploadData(ACCOUNT_ID, PROPERTY_ID, DATASET_ID) {
-    var accountId = ACCOUNT_ID
-    var webPropertyId = PROPERTY_ID
-    var customDataSourceId = DATASET_ID
+    var accountId = ACCOUNT_ID;
+    var webPropertyId = PROPERTY_ID;
+    var customDataSourceId = DATASET_ID;
     var ss = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
     var maxRows = ss.getLastRow();
     var maxColumns = ss.getLastColumn();
     var data = [];
-    for (var i = 1; i <= maxRows;i++) {
-        data.push(ss.getRange([i], 1,1, maxColumns).getValues());
+    for (var i = 1; i <= maxRows; i++) {
+        data.push(ss.getRange([i], 1, 1, maxColumns).getValues());
     }
     var newData = data.join("\n");
     var blobData = Utilities.newBlob(newData, "application/octet-stream", "GA import data");
 
-    uploadStatus(accountId, webPropertyId, customDataSourceId, blobData)
+    uploadStatus(accountId, webPropertyId, customDataSourceId, blobData);
 }
 
-function uploadStatus(accountId, webPropertyId, customDataSourceId, blobData){
+function uploadStatus(accountId, webPropertyId, customDataSourceId, blobData) {
 
     try {
         var upload = Analytics.Management.Uploads.uploadData(accountId, webPropertyId, customDataSourceId, blobData);
         SpreadsheetApp.getUi().alert("Data Has Been Sent To Google Analytics.!! Checking Errors...");
-        var uploadId = JSON.parse(upload)
-        var count = 0
-        while(count < 5)
-        {var status =Analytics.Management.Uploads.get(accountId, webPropertyId , customDataSourceId, uploadId.id )
-            status = JSON.parse(status)
-            if(status['status'] == 'PENDING')
-            {count++;Utilities.sleep(1000)}
-            else if(status['status'] == 'COMPLETED'){
+        var uploadId = JSON.parse(upload);
+        var count = 0;
+        while (count < 5) {
+            var status = Analytics.Management.Uploads.get(accountId, webPropertyId, customDataSourceId, uploadId.id);
+            status = JSON.parse(status);
+            if (status['status'] == 'PENDING') {
+                count++;
+                Utilities.sleep(1000);
+            } else if (status['status'] == 'COMPLETED') {
                 SpreadsheetApp.getUi().alert("SUCCESS.!! No Errors Found. Data Has Been Successfully Uploaded");
-                sendEmail(isEmail,subject,"SUCCESS")
+                sendEmail(isEmail, subject, "SUCCESS");
                 break;
-            } else if(status['status'] == 'FAILED')
-            {
-                var error = ""
-                for(var j=0;j<status.errors.length;j++)
-                {error += (j+1)+".) "+status.errors[j]+" \n" }
-                SpreadsheetApp.getUi().alert("FAILED.!! Here are some errors. \n"+error );
-                sendEmail(isEmail,subject,error)
+            } else if (status['status'] == 'FAILED') {
+                var error = "";
+                for (var j = 0; j < status.errors.length; j++) {error += (j + 1) + ".) " + status.errors[j] + " \n"; }
+                SpreadsheetApp.getUi().alert("FAILED.!! Here are some errors. \n" + error);
+                sendEmail(isEmail, subject, error);
                 break;
-            }}}
-    catch(err) {
-        return
+            }
+        }
+    } catch (err) {
+        return;
     }
 }
 
-function sendEmail(isEmail,subject,status){
-    if(!isEmail){return;}
-    if(MailApp.getRemainingDailyQuota() == 0) {return;}
+function sendEmail(isEmail, subject, status) {
+    if (!isEmail) {return;}
+    if (MailApp.getRemainingDailyQuota() == 0) {return;}
 
-    var subject = ''
-    var subject = subject == '' ? 'Facebook Data Upload To GA ('+ACCOUNT_ID+')' : subject
+    var subject = '';
+    var subject = subject == '' ? 'Facebook Data Upload To GA (' + ACCOUNT_ID + ')' : subject;
     var message = '';
-    if(status == "SUCCESS" ){
-        message = "<h3>Data Has Been Successfully Uploaded in Google Analytics.</h3><br /><p>- AccountID: "+ACCOUNT_ID+"<br />"+
-            "<p>- Property ID: "+PROPERTY_ID}
-    else{ message = "<h3>Data Import Has Been Failed. Here are some errors</h3><br /><p> Errors: "+status+"<br />"
+    if (status == "SUCCESS") {
+        message = "<h3>Data Has Been Successfully Uploaded in Google Analytics.</h3><br /><p>- AccountID: " + ACCOUNT_ID + "<br />" +
+            "<p>- Property ID: " + PROPERTY_ID;
+    } else {
+        message = "<h3>Data Import Has Been Failed. Here are some errors</h3><br /><p> Errors: " + status + "<br />";
     }
     MailApp.sendEmail({
-        'to':Session.getActiveUser().getEmail(),
-        'subject':subject,
-        'htmlBody':message
-    })
+        'to': Session.getActiveUser().getEmail(),
+        'subject': subject,
+        'htmlBody': message
+    });
 
 }
+
 //////////////////////////////////////////////
-(function (host, expose) {
-    var module = { exports: {} };
+(function(host, expose) {
+    var module = {exports: {}};
     var exports = module.exports;
     /****** code begin *********/
 // Copyright 2014 Google Inc. All Rights Reserved.
@@ -1090,14 +1324,14 @@ function sendEmail(isEmail,subject,status){
     Service_.prototype.getTokenFromResponse_ = function(response) {
         var token = this.parseToken_(response.getContentText());
         var resCode = response.getResponseCode();
-        if ( resCode < 200 || resCode >= 300 || token.error) {
+        if (resCode < 200 || resCode >= 300 || token.error) {
             var reason = [
                 token.error,
                 token.message,
                 token.error_description,
                 token.error_uri
             ].filter(Boolean).map(function(part) {
-                return typeof(part) == 'string' ? part : JSON.stringify(part);
+                return typeof (part) == 'string' ? part : JSON.stringify(part);
             }).join(', ');
             if (!reason) {
                 reason = resCode + ': ' + JSON.stringify(token);
@@ -1521,8 +1755,7 @@ function sendEmail(isEmail,subject,status){
         return destination;
     }
 
-    /****** code end *********/
-    ;(
+    (
         function copy(src, target, obj) {
             obj[target] = obj[target] || {};
             if (src && typeof src === 'object') {
@@ -1555,30 +1788,36 @@ function sendEmail(isEmail,subject,status){
     var previousUnderscore = root._;
 
     // Save bytes in the minified (but not gzipped) version:
-    var ArrayProto = Array.prototype, ObjProto = Object.prototype, FuncProto = Function.prototype;
+    var ArrayProto = Array.prototype,
+        ObjProto = Object.prototype,
+        FuncProto = Function.prototype;
 
     // Create quick reference variables for speed access to core prototypes.
     var
-        push             = ArrayProto.push,
-        slice            = ArrayProto.slice,
-        toString         = ObjProto.toString,
-        hasOwnProperty   = ObjProto.hasOwnProperty;
+        push = ArrayProto.push,
+        slice = ArrayProto.slice,
+        toString = ObjProto.toString,
+        hasOwnProperty = ObjProto.hasOwnProperty;
 
     // All **ECMAScript 5** native function implementations that we hope to use
     // are declared here.
     var
-        nativeIsArray      = Array.isArray,
-        nativeKeys         = Object.keys,
-        nativeBind         = FuncProto.bind,
-        nativeCreate       = Object.create;
+        nativeIsArray = Array.isArray,
+        nativeKeys = Object.keys,
+        nativeBind = FuncProto.bind,
+        nativeCreate = Object.create;
 
     // Naked function reference for surrogate-prototype-swapping.
-    var Ctor = function(){};
+    var Ctor = function() {};
 
     // Create a safe reference to the Underscore object for use below.
     var _ = function(obj) {
-        if (obj instanceof _) return obj;
-        if (!(this instanceof _)) return new _(obj);
+        if (obj instanceof _) {
+            return obj;
+        }
+        if (!(this instanceof _)) {
+            return new _(obj);
+        }
         this._wrapped = obj;
     };
 
@@ -1601,20 +1840,26 @@ function sendEmail(isEmail,subject,status){
     // of the passed-in callback, to be repeatedly applied in other Underscore
     // functions.
     var optimizeCb = function(func, context, argCount) {
-        if (context === void 0) return func;
+        if (context === void 0) {
+            return func;
+        }
         switch (argCount == null ? 3 : argCount) {
-            case 1: return function(value) {
-                return func.call(context, value);
-            };
-            case 2: return function(value, other) {
-                return func.call(context, value, other);
-            };
-            case 3: return function(value, index, collection) {
-                return func.call(context, value, index, collection);
-            };
-            case 4: return function(accumulator, value, index, collection) {
-                return func.call(context, accumulator, value, index, collection);
-            };
+            case 1:
+                return function(value) {
+                    return func.call(context, value);
+                };
+            case 2:
+                return function(value, other) {
+                    return func.call(context, value, other);
+                };
+            case 3:
+                return function(value, index, collection) {
+                    return func.call(context, value, index, collection);
+                };
+            case 4:
+                return function(accumulator, value, index, collection) {
+                    return func.call(context, accumulator, value, index, collection);
+                };
         }
         return function() {
             return func.apply(context, arguments);
@@ -1625,9 +1870,15 @@ function sendEmail(isEmail,subject,status){
     // to each element in a collection, returning the desired result — either
     // identity, an arbitrary callback, a property matcher, or a property accessor.
     var cb = function(value, context, argCount) {
-        if (value == null) return _.identity;
-        if (_.isFunction(value)) return optimizeCb(value, context, argCount);
-        if (_.isObject(value)) return _.matcher(value);
+        if (value == null) {
+            return _.identity;
+        }
+        if (_.isFunction(value)) {
+            return optimizeCb(value, context, argCount);
+        }
+        if (_.isObject(value)) {
+            return _.matcher(value);
+        }
         return _.property(value);
     };
     _.iteratee = function(value, context) {
@@ -1638,14 +1889,18 @@ function sendEmail(isEmail,subject,status){
     var createAssigner = function(keysFunc, undefinedOnly) {
         return function(obj) {
             var length = arguments.length;
-            if (length < 2 || obj == null) return obj;
+            if (length < 2 || obj == null) {
+                return obj;
+            }
             for (var index = 1; index < length; index++) {
                 var source = arguments[index],
                     keys = keysFunc(source),
                     l = keys.length;
                 for (var i = 0; i < l; i++) {
                     var key = keys[i];
-                    if (!undefinedOnly || obj[key] === void 0) obj[key] = source[key];
+                    if (!undefinedOnly || obj[key] === void 0) {
+                        obj[key] = source[key];
+                    }
                 }
             }
             return obj;
@@ -1654,8 +1909,12 @@ function sendEmail(isEmail,subject,status){
 
     // An internal function for creating a new object that inherits from another.
     var baseCreate = function(prototype) {
-        if (!_.isObject(prototype)) return {};
-        if (nativeCreate) return nativeCreate(prototype);
+        if (!_.isObject(prototype)) {
+            return {};
+        }
+        if (nativeCreate) {
+            return nativeCreate(prototype);
+        }
         Ctor.prototype = prototype;
         var result = new Ctor;
         Ctor.prototype = null;
@@ -1687,7 +1946,8 @@ function sendEmail(isEmail,subject,status){
     // sparse array-likes as if they were dense.
     _.each = _.forEach = function(obj, iteratee, context) {
         iteratee = optimizeCb(iteratee, context);
-        var i, length;
+        var i,
+            length;
         if (isArrayLike(obj)) {
             for (i = 0, length = obj.length; i < length; i++) {
                 iteratee(obj[i], i, obj);
@@ -1755,7 +2015,9 @@ function sendEmail(isEmail,subject,status){
         } else {
             key = _.findKey(obj, predicate, context);
         }
-        if (key !== void 0 && key !== -1) return obj[key];
+        if (key !== void 0 && key !== -1) {
+            return obj[key];
+        }
     };
 
     // Return all the elements that pass a truth test.
@@ -1764,7 +2026,9 @@ function sendEmail(isEmail,subject,status){
         var results = [];
         predicate = cb(predicate, context);
         _.each(obj, function(value, index, list) {
-            if (predicate(value, index, list)) results.push(value);
+            if (predicate(value, index, list)) {
+                results.push(value);
+            }
         });
         return results;
     };
@@ -1782,7 +2046,9 @@ function sendEmail(isEmail,subject,status){
             length = (keys || obj).length;
         for (var index = 0; index < length; index++) {
             var currentKey = keys ? keys[index] : index;
-            if (!predicate(obj[currentKey], currentKey, obj)) return false;
+            if (!predicate(obj[currentKey], currentKey, obj)) {
+                return false;
+            }
         }
         return true;
     };
@@ -1795,7 +2061,9 @@ function sendEmail(isEmail,subject,status){
             length = (keys || obj).length;
         for (var index = 0; index < length; index++) {
             var currentKey = keys ? keys[index] : index;
-            if (predicate(obj[currentKey], currentKey, obj)) return true;
+            if (predicate(obj[currentKey], currentKey, obj)) {
+                return true;
+            }
         }
         return false;
     };
@@ -1803,8 +2071,12 @@ function sendEmail(isEmail,subject,status){
     // Determine if the array or object contains a given item (using `===`).
     // Aliased as `includes` and `include`.
     _.contains = _.includes = _.include = function(obj, item, fromIndex, guard) {
-        if (!isArrayLike(obj)) obj = _.values(obj);
-        if (typeof fromIndex != 'number' || guard) fromIndex = 0;
+        if (!isArrayLike(obj)) {
+            obj = _.values(obj);
+        }
+        if (typeof fromIndex != 'number' || guard) {
+            fromIndex = 0;
+        }
         return _.indexOf(obj, item, fromIndex) >= 0;
     };
 
@@ -1837,8 +2109,10 @@ function sendEmail(isEmail,subject,status){
 
     // Return the maximum element (or element-based computation).
     _.max = function(obj, iteratee, context) {
-        var result = -Infinity, lastComputed = -Infinity,
-            value, computed;
+        var result = -Infinity,
+            lastComputed = -Infinity,
+            value,
+            computed;
         if (iteratee == null && obj != null) {
             obj = isArrayLike(obj) ? obj : _.values(obj);
             for (var i = 0, length = obj.length; i < length; i++) {
@@ -1862,8 +2136,10 @@ function sendEmail(isEmail,subject,status){
 
     // Return the minimum element (or element-based computation).
     _.min = function(obj, iteratee, context) {
-        var result = Infinity, lastComputed = Infinity,
-            value, computed;
+        var result = Infinity,
+            lastComputed = Infinity,
+            value,
+            computed;
         if (iteratee == null && obj != null) {
             obj = isArrayLike(obj) ? obj : _.values(obj);
             for (var i = 0, length = obj.length; i < length; i++) {
@@ -1893,7 +2169,9 @@ function sendEmail(isEmail,subject,status){
         var shuffled = Array(length);
         for (var index = 0, rand; index < length; index++) {
             rand = _.random(0, index);
-            if (rand !== index) shuffled[index] = shuffled[rand];
+            if (rand !== index) {
+                shuffled[index] = shuffled[rand];
+            }
             shuffled[rand] = set[index];
         }
         return shuffled;
@@ -1904,7 +2182,9 @@ function sendEmail(isEmail,subject,status){
     // The internal `guard` argument allows it to work with `map`.
     _.sample = function(obj, n, guard) {
         if (n == null || guard) {
-            if (!isArrayLike(obj)) obj = _.values(obj);
+            if (!isArrayLike(obj)) {
+                obj = _.values(obj);
+            }
             return obj[_.random(obj.length - 1)];
         }
         return _.shuffle(obj).slice(0, Math.max(0, n));
@@ -1923,8 +2203,12 @@ function sendEmail(isEmail,subject,status){
             var a = left.criteria;
             var b = right.criteria;
             if (a !== b) {
-                if (a > b || a === void 0) return 1;
-                if (a < b || b === void 0) return -1;
+                if (a > b || a === void 0) {
+                    return 1;
+                }
+                if (a < b || b === void 0) {
+                    return -1;
+                }
             }
             return left.index - right.index;
         }), 'value');
@@ -1946,7 +2230,11 @@ function sendEmail(isEmail,subject,status){
     // Groups the object's values by a criterion. Pass either a string attribute
     // to group by, or a function that returns the criterion.
     _.groupBy = group(function(result, value, key) {
-        if (_.has(result, key)) result[key].push(value); else result[key] = [value];
+        if (_.has(result, key)) {
+            result[key].push(value);
+        } else {
+            result[key] = [value];
+        }
     });
 
     // Indexes the object's values by a criterion, similar to `groupBy`, but for
@@ -1959,20 +2247,32 @@ function sendEmail(isEmail,subject,status){
     // either a string attribute to count by, or a function that returns the
     // criterion.
     _.countBy = group(function(result, value, key) {
-        if (_.has(result, key)) result[key]++; else result[key] = 1;
+        if (_.has(result, key)) {
+            result[key]++;
+        } else {
+            result[key] = 1;
+        }
     });
 
     // Safely create a real, live array from anything iterable.
     _.toArray = function(obj) {
-        if (!obj) return [];
-        if (_.isArray(obj)) return slice.call(obj);
-        if (isArrayLike(obj)) return _.map(obj, _.identity);
+        if (!obj) {
+            return [];
+        }
+        if (_.isArray(obj)) {
+            return slice.call(obj);
+        }
+        if (isArrayLike(obj)) {
+            return _.map(obj, _.identity);
+        }
         return _.values(obj);
     };
 
     // Return the number of elements in an object.
     _.size = function(obj) {
-        if (obj == null) return 0;
+        if (obj == null) {
+            return 0;
+        }
         return isArrayLike(obj) ? obj.length : _.keys(obj).length;
     };
 
@@ -1980,7 +2280,8 @@ function sendEmail(isEmail,subject,status){
     // predicate, and one whose elements all do not satisfy the predicate.
     _.partition = function(obj, predicate, context) {
         predicate = cb(predicate, context);
-        var pass = [], fail = [];
+        var pass = [],
+            fail = [];
         _.each(obj, function(value, key, obj) {
             (predicate(value, key, obj) ? pass : fail).push(value);
         });
@@ -1994,8 +2295,12 @@ function sendEmail(isEmail,subject,status){
     // values in the array. Aliased as `head` and `take`. The **guard** check
     // allows it to work with `_.map`.
     _.first = _.head = _.take = function(array, n, guard) {
-        if (array == null) return void 0;
-        if (n == null || guard) return array[0];
+        if (array == null) {
+            return void 0;
+        }
+        if (n == null || guard) {
+            return array[0];
+        }
         return _.initial(array, array.length - n);
     };
 
@@ -2009,8 +2314,12 @@ function sendEmail(isEmail,subject,status){
     // Get the last element of an array. Passing **n** will return the last N
     // values in the array.
     _.last = function(array, n, guard) {
-        if (array == null) return void 0;
-        if (n == null || guard) return array[array.length - 1];
+        if (array == null) {
+            return void 0;
+        }
+        if (n == null || guard) {
+            return array[array.length - 1];
+        }
         return _.rest(array, Math.max(0, array.length - n));
     };
 
@@ -2028,13 +2337,17 @@ function sendEmail(isEmail,subject,status){
 
     // Internal implementation of a recursive `flatten` function.
     var flatten = function(input, shallow, strict, startIndex) {
-        var output = [], idx = 0;
+        var output = [],
+            idx = 0;
         for (var i = startIndex || 0, length = getLength(input); i < length; i++) {
             var value = input[i];
             if (isArrayLike(value) && (_.isArray(value) || _.isArguments(value))) {
                 //flatten current level of array or arguments object
-                if (!shallow) value = flatten(value, shallow, strict);
-                var j = 0, len = value.length;
+                if (!shallow) {
+                    value = flatten(value, shallow, strict);
+                }
+                var j = 0,
+                    len = value.length;
                 output.length += len;
                 while (j < len) {
                     output[idx++] = value[j++];
@@ -2065,14 +2378,18 @@ function sendEmail(isEmail,subject,status){
             iteratee = isSorted;
             isSorted = false;
         }
-        if (iteratee != null) iteratee = cb(iteratee, context);
+        if (iteratee != null) {
+            iteratee = cb(iteratee, context);
+        }
         var result = [];
         var seen = [];
         for (var i = 0, length = getLength(array); i < length; i++) {
             var value = array[i],
                 computed = iteratee ? iteratee(value, i, array) : value;
             if (isSorted) {
-                if (!i || seen !== computed) result.push(value);
+                if (!i || seen !== computed) {
+                    result.push(value);
+                }
                 seen = computed;
             } else if (iteratee) {
                 if (!_.contains(seen, computed)) {
@@ -2099,11 +2416,17 @@ function sendEmail(isEmail,subject,status){
         var argsLength = arguments.length;
         for (var i = 0, length = getLength(array); i < length; i++) {
             var item = array[i];
-            if (_.contains(result, item)) continue;
-            for (var j = 1; j < argsLength; j++) {
-                if (!_.contains(arguments[j], item)) break;
+            if (_.contains(result, item)) {
+                continue;
             }
-            if (j === argsLength) result.push(item);
+            for (var j = 1; j < argsLength; j++) {
+                if (!_.contains(arguments[j], item)) {
+                    break;
+                }
+            }
+            if (j === argsLength) {
+                result.push(item);
+            }
         }
         return result;
     };
@@ -2112,7 +2435,7 @@ function sendEmail(isEmail,subject,status){
     // Only the elements present in just the first array will remain.
     _.difference = function(array) {
         var rest = flatten(arguments, true, true, 1);
-        return _.filter(array, function(value){
+        return _.filter(array, function(value) {
             return !_.contains(rest, value);
         });
     };
@@ -2157,7 +2480,9 @@ function sendEmail(isEmail,subject,status){
             var length = getLength(array);
             var index = dir > 0 ? 0 : length - 1;
             for (; index >= 0 && index < length; index += dir) {
-                if (predicate(array[index], index, array)) return index;
+                if (predicate(array[index], index, array)) {
+                    return index;
+                }
             }
             return -1;
         };
@@ -2172,10 +2497,15 @@ function sendEmail(isEmail,subject,status){
     _.sortedIndex = function(array, obj, iteratee, context) {
         iteratee = cb(iteratee, context, 1);
         var value = iteratee(obj);
-        var low = 0, high = getLength(array);
+        var low = 0,
+            high = getLength(array);
         while (low < high) {
             var mid = Math.floor((low + high) / 2);
-            if (iteratee(array[mid]) < value) low = mid + 1; else high = mid;
+            if (iteratee(array[mid]) < value) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
         }
         return low;
     };
@@ -2183,7 +2513,8 @@ function sendEmail(isEmail,subject,status){
     // Generator function to create the indexOf and lastIndexOf functions
     function createIndexFinder(dir, predicateFind, sortedIndex) {
         return function(array, item, idx) {
-            var i = 0, length = getLength(array);
+            var i = 0,
+                length = getLength(array);
             if (typeof idx == 'number') {
                 if (dir > 0) {
                     i = idx >= 0 ? idx : Math.max(idx + length, i);
@@ -2199,7 +2530,9 @@ function sendEmail(isEmail,subject,status){
                 return idx >= 0 ? idx + i : -1;
             }
             for (idx = dir > 0 ? i : length - 1; idx >= 0 && idx < length; idx += dir) {
-                if (array[idx] === item) return idx;
+                if (array[idx] === item) {
+                    return idx;
+                }
             }
             return -1;
         };
@@ -2238,10 +2571,14 @@ function sendEmail(isEmail,subject,status){
     // Determines whether to execute a function as a constructor
     // or a normal function with the provided arguments
     var executeBound = function(sourceFunc, boundFunc, context, callingContext, args) {
-        if (!(callingContext instanceof boundFunc)) return sourceFunc.apply(context, args);
+        if (!(callingContext instanceof boundFunc)) {
+            return sourceFunc.apply(context, args);
+        }
         var self = baseCreate(sourceFunc.prototype);
         var result = sourceFunc.apply(self, args);
-        if (_.isObject(result)) return result;
+        if (_.isObject(result)) {
+            return result;
+        }
         return self;
     };
 
@@ -2249,8 +2586,12 @@ function sendEmail(isEmail,subject,status){
     // optionally). Delegates to **ECMAScript 5**'s native `Function.bind` if
     // available.
     _.bind = function(func, context) {
-        if (nativeBind && func.bind === nativeBind) return nativeBind.apply(func, slice.call(arguments, 1));
-        if (!_.isFunction(func)) throw new TypeError('Bind must be called on a function');
+        if (nativeBind && func.bind === nativeBind) {
+            return nativeBind.apply(func, slice.call(arguments, 1));
+        }
+        if (!_.isFunction(func)) {
+            throw new TypeError('Bind must be called on a function');
+        }
         var args = slice.call(arguments, 2);
         var bound = function() {
             return executeBound(func, bound, context, this, args.concat(slice.call(arguments)));
@@ -2264,12 +2605,15 @@ function sendEmail(isEmail,subject,status){
     _.partial = function(func) {
         var boundArgs = slice.call(arguments, 1);
         var bound = function() {
-            var position = 0, length = boundArgs.length;
+            var position = 0,
+                length = boundArgs.length;
             var args = Array(length);
             for (var i = 0; i < length; i++) {
                 args[i] = boundArgs[i] === _ ? arguments[position++] : boundArgs[i];
             }
-            while (position < arguments.length) args.push(arguments[position++]);
+            while (position < arguments.length) {
+                args.push(arguments[position++]);
+            }
             return executeBound(func, bound, this, this, args);
         };
         return bound;
@@ -2279,8 +2623,12 @@ function sendEmail(isEmail,subject,status){
     // are the method names to be bound. Useful for ensuring that all callbacks
     // defined on an object belong to it.
     _.bindAll = function(obj) {
-        var i, length = arguments.length, key;
-        if (length <= 1) throw new Error('bindAll must be passed function names');
+        var i,
+            length = arguments.length,
+            key;
+        if (length <= 1) {
+            throw new Error('bindAll must be passed function names');
+        }
         for (i = 1; i < length; i++) {
             key = arguments[i];
             obj[key] = _.bind(obj[key], obj);
@@ -2293,7 +2641,9 @@ function sendEmail(isEmail,subject,status){
         var memoize = function(key) {
             var cache = memoize.cache;
             var address = '' + (hasher ? hasher.apply(this, arguments) : key);
-            if (!_.has(cache, address)) cache[address] = func.apply(this, arguments);
+            if (!_.has(cache, address)) {
+                cache[address] = func.apply(this, arguments);
+            }
             return cache[address];
         };
         memoize.cache = {};
@@ -2304,7 +2654,7 @@ function sendEmail(isEmail,subject,status){
     // it with the arguments supplied.
     _.delay = function(func, wait) {
         var args = slice.call(arguments, 2);
-        return setTimeout(function(){
+        return setTimeout(function() {
             return func.apply(null, args);
         }, wait);
     };
@@ -2319,19 +2669,27 @@ function sendEmail(isEmail,subject,status){
     // but if you'd like to disable the execution on the leading edge, pass
     // `{leading: false}`. To disable execution on the trailing edge, ditto.
     _.throttle = function(func, wait, options) {
-        var context, args, result;
+        var context,
+            args,
+            result;
         var timeout = null;
         var previous = 0;
-        if (!options) options = {};
+        if (!options) {
+            options = {};
+        }
         var later = function() {
             previous = options.leading === false ? 0 : _.now();
             timeout = null;
             result = func.apply(context, args);
-            if (!timeout) context = args = null;
+            if (!timeout) {
+                context = args = null;
+            }
         };
         return function() {
             var now = _.now();
-            if (!previous && options.leading === false) previous = now;
+            if (!previous && options.leading === false) {
+                previous = now;
+            }
             var remaining = wait - (now - previous);
             context = this;
             args = arguments;
@@ -2342,7 +2700,9 @@ function sendEmail(isEmail,subject,status){
                 }
                 previous = now;
                 result = func.apply(context, args);
-                if (!timeout) context = args = null;
+                if (!timeout) {
+                    context = args = null;
+                }
             } else if (!timeout && options.trailing !== false) {
                 timeout = setTimeout(later, remaining);
             }
@@ -2355,7 +2715,11 @@ function sendEmail(isEmail,subject,status){
     // N milliseconds. If `immediate` is passed, trigger the function on the
     // leading edge, instead of the trailing.
     _.debounce = function(func, wait, immediate) {
-        var timeout, args, context, timestamp, result;
+        var timeout,
+            args,
+            context,
+            timestamp,
+            result;
 
         var later = function() {
             var last = _.now() - timestamp;
@@ -2366,7 +2730,9 @@ function sendEmail(isEmail,subject,status){
                 timeout = null;
                 if (!immediate) {
                     result = func.apply(context, args);
-                    if (!timeout) context = args = null;
+                    if (!timeout) {
+                        context = args = null;
+                    }
                 }
             }
         };
@@ -2376,7 +2742,9 @@ function sendEmail(isEmail,subject,status){
             args = arguments;
             timestamp = _.now();
             var callNow = immediate && !timeout;
-            if (!timeout) timeout = setTimeout(later, wait);
+            if (!timeout) {
+                timeout = setTimeout(later, wait);
+            }
             if (callNow) {
                 result = func.apply(context, args);
                 context = args = null;
@@ -2408,7 +2776,9 @@ function sendEmail(isEmail,subject,status){
         return function() {
             var i = start;
             var result = args[start].apply(this, arguments);
-            while (i--) result = args[i].call(this, result);
+            while (i--) {
+                result = args[i].call(this, result);
+            }
             return result;
         };
     };
@@ -2429,7 +2799,9 @@ function sendEmail(isEmail,subject,status){
             if (--times > 0) {
                 memo = func.apply(this, arguments);
             }
-            if (times <= 1) func = null;
+            if (times <= 1) {
+                func = null;
+            }
             return memo;
         };
     };
@@ -2453,7 +2825,9 @@ function sendEmail(isEmail,subject,status){
 
         // Constructor is a special case.
         var prop = 'constructor';
-        if (_.has(obj, prop) && !_.contains(keys, prop)) keys.push(prop);
+        if (_.has(obj, prop) && !_.contains(keys, prop)) {
+            keys.push(prop);
+        }
 
         while (nonEnumIdx--) {
             prop = nonEnumerableProps[nonEnumIdx];
@@ -2466,22 +2840,38 @@ function sendEmail(isEmail,subject,status){
     // Retrieve the names of an object's own properties.
     // Delegates to **ECMAScript 5**'s native `Object.keys`
     _.keys = function(obj) {
-        if (!_.isObject(obj)) return [];
-        if (nativeKeys) return nativeKeys(obj);
+        if (!_.isObject(obj)) {
+            return [];
+        }
+        if (nativeKeys) {
+            return nativeKeys(obj);
+        }
         var keys = [];
-        for (var key in obj) if (_.has(obj, key)) keys.push(key);
+        for (var key in obj) {
+            if (_.has(obj, key)) {
+                keys.push(key);
+            }
+        }
         // Ahem, IE < 9.
-        if (hasEnumBug) collectNonEnumProps(obj, keys);
+        if (hasEnumBug) {
+            collectNonEnumProps(obj, keys);
+        }
         return keys;
     };
 
     // Retrieve all the property names of an object.
     _.allKeys = function(obj) {
-        if (!_.isObject(obj)) return [];
+        if (!_.isObject(obj)) {
+            return [];
+        }
         var keys = [];
-        for (var key in obj) keys.push(key);
+        for (var key in obj) {
+            keys.push(key);
+        }
         // Ahem, IE < 9.
-        if (hasEnumBug) collectNonEnumProps(obj, keys);
+        if (hasEnumBug) {
+            collectNonEnumProps(obj, keys);
+        }
         return keys;
     };
 
@@ -2500,7 +2890,7 @@ function sendEmail(isEmail,subject,status){
     // In contrast to _.map it returns an object
     _.mapObject = function(obj, iteratee, context) {
         iteratee = cb(iteratee, context);
-        var keys =  _.keys(obj),
+        var keys = _.keys(obj),
             length = keys.length,
             results = {},
             currentKey;
@@ -2537,7 +2927,9 @@ function sendEmail(isEmail,subject,status){
     _.functions = _.methods = function(obj) {
         var names = [];
         for (var key in obj) {
-            if (_.isFunction(obj[key])) names.push(key);
+            if (_.isFunction(obj[key])) {
+                names.push(key);
+            }
         }
         return names.sort();
     };
@@ -2552,17 +2944,25 @@ function sendEmail(isEmail,subject,status){
     // Returns the first key on an object that passes a predicate test
     _.findKey = function(obj, predicate, context) {
         predicate = cb(predicate, context);
-        var keys = _.keys(obj), key;
+        var keys = _.keys(obj),
+            key;
         for (var i = 0, length = keys.length; i < length; i++) {
             key = keys[i];
-            if (predicate(obj[key], key, obj)) return key;
+            if (predicate(obj[key], key, obj)) {
+                return key;
+            }
         }
     };
 
     // Return a copy of the object only containing the whitelisted properties.
     _.pick = function(object, oiteratee, context) {
-        var result = {}, obj = object, iteratee, keys;
-        if (obj == null) return result;
+        var result = {},
+            obj = object,
+            iteratee,
+            keys;
+        if (obj == null) {
+            return result;
+        }
         if (_.isFunction(oiteratee)) {
             keys = _.allKeys(obj);
             iteratee = optimizeCb(oiteratee, context);
@@ -2574,7 +2974,9 @@ function sendEmail(isEmail,subject,status){
         for (var i = 0, length = keys.length; i < length; i++) {
             var key = keys[i];
             var value = obj[key];
-            if (iteratee(value, key, obj)) result[key] = value;
+            if (iteratee(value, key, obj)) {
+                result[key] = value;
+            }
         }
         return result;
     };
@@ -2600,13 +3002,17 @@ function sendEmail(isEmail,subject,status){
     // created object.
     _.create = function(prototype, props) {
         var result = baseCreate(prototype);
-        if (props) _.extendOwn(result, props);
+        if (props) {
+            _.extendOwn(result, props);
+        }
         return result;
     };
 
     // Create a (shallow-cloned) duplicate of an object.
     _.clone = function(obj) {
-        if (!_.isObject(obj)) return obj;
+        if (!_.isObject(obj)) {
+            return obj;
+        }
         return _.isArray(obj) ? obj.slice() : _.extend({}, obj);
     };
 
@@ -2620,30 +3026,44 @@ function sendEmail(isEmail,subject,status){
 
     // Returns whether an object has a given set of `key:value` pairs.
     _.isMatch = function(object, attrs) {
-        var keys = _.keys(attrs), length = keys.length;
-        if (object == null) return !length;
+        var keys = _.keys(attrs),
+            length = keys.length;
+        if (object == null) {
+            return !length;
+        }
         var obj = Object(object);
         for (var i = 0; i < length; i++) {
             var key = keys[i];
-            if (attrs[key] !== obj[key] || !(key in obj)) return false;
+            if (attrs[key] !== obj[key] || !(key in obj)) {
+                return false;
+            }
         }
         return true;
     };
-
 
     // Internal recursive comparison function for `isEqual`.
     var eq = function(a, b, aStack, bStack) {
         // Identical objects are equal. `0 === -0`, but they aren't identical.
         // See the [Harmony `egal` proposal](http://wiki.ecmascript.org/doku.php?id=harmony:egal).
-        if (a === b) return a !== 0 || 1 / a === 1 / b;
+        if (a === b) {
+            return a !== 0 || 1 / a === 1 / b;
+        }
         // A strict comparison is necessary because `null == undefined`.
-        if (a == null || b == null) return a === b;
+        if (a == null || b == null) {
+            return a === b;
+        }
         // Unwrap any wrapped objects.
-        if (a instanceof _) a = a._wrapped;
-        if (b instanceof _) b = b._wrapped;
+        if (a instanceof _) {
+            a = a._wrapped;
+        }
+        if (b instanceof _) {
+            b = b._wrapped;
+        }
         // Compare `[[Class]]` names.
         var className = toString.call(a);
-        if (className !== toString.call(b)) return false;
+        if (className !== toString.call(b)) {
+            return false;
+        }
         switch (className) {
             // Strings, numbers, regular expressions, dates, and booleans are compared by value.
             case '[object RegExp]':
@@ -2655,7 +3075,9 @@ function sendEmail(isEmail,subject,status){
             case '[object Number]':
                 // `NaN`s are equivalent, but non-reflexive.
                 // Object(NaN) is equivalent to NaN
-                if (+a !== +a) return +b !== +b;
+                if (+a !== +a) {
+                    return +b !== +b;
+                }
                 // An `egal` comparison is performed for other numeric values.
                 return +a === 0 ? 1 / +a === 1 / b : +a === +b;
             case '[object Date]':
@@ -2668,11 +3090,14 @@ function sendEmail(isEmail,subject,status){
 
         var areArrays = className === '[object Array]';
         if (!areArrays) {
-            if (typeof a != 'object' || typeof b != 'object') return false;
+            if (typeof a != 'object' || typeof b != 'object') {
+                return false;
+            }
 
             // Objects with different constructors are not equivalent, but `Object`s or `Array`s
             // from different frames are.
-            var aCtor = a.constructor, bCtor = b.constructor;
+            var aCtor = a.constructor,
+                bCtor = b.constructor;
             if (aCtor !== bCtor && !(_.isFunction(aCtor) && aCtor instanceof aCtor &&
                 _.isFunction(bCtor) && bCtor instanceof bCtor)
                 && ('constructor' in a && 'constructor' in b)) {
@@ -2690,7 +3115,9 @@ function sendEmail(isEmail,subject,status){
         while (length--) {
             // Linear search. Performance is inversely proportional to the number of
             // unique nested structures.
-            if (aStack[length] === a) return bStack[length] === b;
+            if (aStack[length] === a) {
+                return bStack[length] === b;
+            }
         }
 
         // Add the first object to the stack of traversed objects.
@@ -2701,21 +3128,30 @@ function sendEmail(isEmail,subject,status){
         if (areArrays) {
             // Compare array lengths to determine if a deep comparison is necessary.
             length = a.length;
-            if (length !== b.length) return false;
+            if (length !== b.length) {
+                return false;
+            }
             // Deep compare the contents, ignoring non-numeric properties.
             while (length--) {
-                if (!eq(a[length], b[length], aStack, bStack)) return false;
+                if (!eq(a[length], b[length], aStack, bStack)) {
+                    return false;
+                }
             }
         } else {
             // Deep compare objects.
-            var keys = _.keys(a), key;
+            var keys = _.keys(a),
+                key;
             length = keys.length;
             // Ensure that both objects contain the same number of properties before comparing deep equality.
-            if (_.keys(b).length !== length) return false;
+            if (_.keys(b).length !== length) {
+                return false;
+            }
             while (length--) {
                 // Deep compare each member
                 key = keys[length];
-                if (!(_.has(b, key) && eq(a[key], b[key], aStack, bStack))) return false;
+                if (!(_.has(b, key) && eq(a[key], b[key], aStack, bStack))) {
+                    return false;
+                }
             }
         }
         // Remove the first object from the stack of traversed objects.
@@ -2732,8 +3168,12 @@ function sendEmail(isEmail,subject,status){
     // Is a given array, string, or object empty?
     // An "empty" object has no enumerable own-properties.
     _.isEmpty = function(obj) {
-        if (obj == null) return true;
-        if (isArrayLike(obj) && (_.isArray(obj) || _.isString(obj) || _.isArguments(obj))) return obj.length === 0;
+        if (obj == null) {
+            return true;
+        }
+        if (isArrayLike(obj) && (_.isArray(obj) || _.isString(obj) || _.isArguments(obj))) {
+            return obj.length === 0;
+        }
         return _.keys(obj).length === 0;
     };
 
@@ -2830,13 +3270,13 @@ function sendEmail(isEmail,subject,status){
         };
     };
 
-    _.noop = function(){};
+    _.noop = function() {};
 
     _.property = property;
 
     // Generates a function for a given object that returns a given property.
     _.propertyOf = function(obj) {
-        return obj == null ? function(){} : function(key) {
+        return obj == null ? function() {} : function(key) {
             return obj[key];
         };
     };
@@ -2854,7 +3294,9 @@ function sendEmail(isEmail,subject,status){
     _.times = function(n, iteratee, context) {
         var accum = Array(Math.max(0, n));
         iteratee = optimizeCb(iteratee, context, 1);
-        for (var i = 0; i < n; i++) accum[i] = iteratee(i);
+        for (var i = 0; i < n; i++) {
+            accum[i] = iteratee(i);
+        }
         return accum;
     };
 
@@ -2921,9 +3363,9 @@ function sendEmail(isEmail,subject,status){
     // By default, Underscore uses ERB-style template delimiters, change the
     // following template settings to use alternative delimiters.
     _.templateSettings = {
-        evaluate    : /<%([\s\S]+?)%>/g,
-        interpolate : /<%=([\s\S]+?)%>/g,
-        escape      : /<%-([\s\S]+?)%>/g
+        evaluate: /<%([\s\S]+?)%>/g,
+        interpolate: /<%=([\s\S]+?)%>/g,
+        escape: /<%-([\s\S]+?)%>/g
     };
 
     // When customizing `templateSettings`, if you don't want to define an
@@ -2934,10 +3376,10 @@ function sendEmail(isEmail,subject,status){
     // Certain characters need to be escaped so that they can be put into a
     // string literal.
     var escapes = {
-        "'":      "'",
-        '\\':     '\\',
-        '\r':     'r',
-        '\n':     'n',
+        "'": "'",
+        '\\': '\\',
+        '\r': 'r',
+        '\n': 'n',
         '\u2028': 'u2028',
         '\u2029': 'u2029'
     };
@@ -2953,7 +3395,9 @@ function sendEmail(isEmail,subject,status){
     // and correctly escapes quotes within interpolated code.
     // NB: `oldSettings` only exists for backwards compatibility.
     _.template = function(text, settings, oldSettings) {
-        if (!settings && oldSettings) settings = oldSettings;
+        if (!settings && oldSettings) {
+            settings = oldSettings;
+        }
         settings = _.defaults({}, settings, _.templateSettings);
 
         // Combine delimiters into one regular expression via alternation.
@@ -2984,7 +3428,9 @@ function sendEmail(isEmail,subject,status){
         source += "';\n";
 
         // If a variable is not specified, place data values in local scope.
-        if (!settings.variable) source = 'with(obj||{}){\n' + source + '}\n';
+        if (!settings.variable) {
+            source = 'with(obj||{}){\n' + source + '}\n';
+        }
 
         source = "var __t,__p='',__j=Array.prototype.join," +
             "print=function(){__p+=__j.call(arguments,'');};\n" +
@@ -3047,7 +3493,9 @@ function sendEmail(isEmail,subject,status){
         _.prototype[name] = function() {
             var obj = this._wrapped;
             method.apply(obj, arguments);
-            if ((name === 'shift' || name === 'splice') && obj.length === 0) delete obj[0];
+            if ((name === 'shift' || name === 'splice') && obj.length === 0) {
+                delete obj[0];
+            }
             return result(this, obj);
         };
     });
