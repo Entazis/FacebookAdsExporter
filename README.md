@@ -5,7 +5,7 @@
 * Check Here for UI Help: https://www.digishuffle.com/free-facebook-ads-reporting-tool/
 
 This project was made for a company using `RitwikGA/FacebookReportingTool` to export daily, weekly, monthly facebook ads.
-The project runs on script.google.com and exports and saves these fields for each campaign in a spreadsheet:
+The project runs on script.google.com and exports and saves these fields for each campaign for each period in a spreadsheet:
 * Start Date
 * End Date
 * Locale
@@ -14,7 +14,14 @@ The project runs on script.google.com and exports and saves these fields for eac
 * Impressions
 * Clicks
 * Avg. pos.
-* Number of new trial users
-* Number of new paying users
+* Number of new trial users from this campaign
+* Number of new paying users from this campaign
+
+It also updates the data from earlier exports.
 
 At the end of each export, the exported data is also sent to a Slack channel.
+
+There are 3 functions that can be set to run daily/ weekly/ monthly, each of them exports facebook ads for that period starting from the last exported date:
+* `facebookDataDaily()`
+* `facebookDataWeekly()` 
+* `facebookDataMonthly()`
